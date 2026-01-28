@@ -610,7 +610,7 @@ const TallyReportView: React.FC<TallyReportViewProps> = ({ vessel, shift, mode, 
                             <div key={sealIdx}>
                                 <AutocompleteInput 
                                     value={currentVal}
-                                    onChange={(val) => updateSealValue(item.contId, sealIdx, val)}
+                                    onChange={(val: string) => updateSealValue(item.contId, sealIdx, val)}
                                     options={filteredOptions}
                                     placeholder={`Nhập Seal ${sealIdx + 1}...`}
                                     className="w-full p-3 bg-white border border-blue-100 rounded-xl font-bold text-xs outline-none focus:ring-1 focus:ring-blue-200 uppercase"
