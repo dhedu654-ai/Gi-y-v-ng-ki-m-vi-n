@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Vessel, Shift, TallyReport, TallyItem, Container, MechanicalDetail } from '../types';
 import { MOCK_CONTAINERS, MOCK_WORKERS, MOCK_DRIVERS, MOCK_TRANSPORT_VEHICLES, MOCK_CUSTOMS_SEALS, HANDLING_METHODS, MOCK_EXTERNAL_UNITS } from '../constants';
 import TallyPrintTemplate from '../components/TallyPrintTemplate';
@@ -33,8 +33,7 @@ interface ExternalMechGroup {
 const TallyReportView: React.FC<TallyReportViewProps> = ({ vessel, shift, mode, workDate, user, initialReport, onSave, onFinish, onBack }) => {
   const [subStep, setSubStep] = useState<1 | 2>(1);
   const [isPreviewing, setIsPreviewing] = useState(false);
-  const [lastSavedTime, setLastSavedTime] = useState<string | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [, setLastSavedTime] = useState<string | null>(null);
   
   // State quản lý danh sách cơ giới nội bộ (Chi tiết từng người)
   const [internalMechList, setInternalMechList] = useState<MechanicalDetail[]>([]);
@@ -48,7 +47,7 @@ const TallyReportView: React.FC<TallyReportViewProps> = ({ vessel, shift, mode, 
     shift: shift,
     workDate: workDate,
     owner: vessel.customerName,
-    workerCount: 1, 
+    workerCount: 0,
     workerNames: '',
     mechanicalCount: 0,
     mechanicalNames: '',
@@ -69,33 +68,25 @@ const TallyReportView: React.FC<TallyReportViewProps> = ({ vessel, shift, mode, 
     mode === 'NHAP' ? HANDLING_METHODS.MECHANICAL_IMPORT : HANDLING_METHODS.MECHANICAL_EXPORT, 
   [mode]);
 
-  // Helper to filter out already selected options to prevent duplicates
-  const getAvailableOptions = useCallback((allOptions: string[], selectedValues: string[], currentValue: string) => {
-    return allOptions.filter(opt => !selectedValues.includes(opt) || opt === currentValue);
-  }, []);
-
   // --- LOCAL STORAGE KEY GENERATION ---
   const storageKey = useMemo(() => {
     return `DANALOG_AUTOSAVE_${user}_${vessel.id}_${mode}_${shift}`;
   }, [user, vessel.id, mode, shift]);
 
-  // --- HELPER: RESTORE DATA FROM REPORT OBJECT ---
-  const restoreDataFromReport = useCallback((reportData: Partial<TallyReport>) => {
-      setCurrentReport(prev => ({
-        ...prev,
-        ...reportData,
-        vesselId: vessel.id,
-        mode: mode,
-        shift: shift,
-        createdBy: user
-      }));
+  // --- EFFECT: INITIALIZE DATA ---
+  useEffect(() => {
+    if (initialReport) {
+      setCurrentReport({
+        ...initialReport,
+        createdBy: initialReport.createdBy || user
+      });
       
-      if (reportData.mechanicalDetails) {
+      if (initialReport.mechanicalDetails) {
         // Restore internal
-        setInternalMechList(reportData.mechanicalDetails.filter(m => !m.isExternal));
+        setInternalMechList(initialReport.mechanicalDetails.filter(m => !m.isExternal));
         
         // Restore external groups logic
-        const externals = reportData.mechanicalDetails.filter(m => m.isExternal);
+        const externals = initialReport.mechanicalDetails.filter(m => m.isExternal);
         
         // 1. Group by Name
         const nameGroups: Record<string, MechanicalDetail[]> = {};
@@ -107,6 +98,7 @@ const TallyReportView: React.FC<TallyReportViewProps> = ({ vessel, shift, mode, 
 
         // 2. Convert to ExternalMechGroup structure
         const loadedGroups: ExternalMechGroup[] = Object.entries(nameGroups).map(([name, items]) => {
+            // Within name, group by task to form jobs
             const taskCounts: Record<string, number> = {};
             items.forEach(m => {
                 const t = m.task || handlingOptions[0];
@@ -128,19 +120,55 @@ const TallyReportView: React.FC<TallyReportViewProps> = ({ vessel, shift, mode, 
         
         setExternalGroups(loadedGroups);
       }
-  }, [vessel.id, mode, shift, user, handlingOptions]);
-
-  // --- EFFECT: INITIALIZE DATA ---
-  useEffect(() => {
-    if (initialReport) {
-      restoreDataFromReport(initialReport);
     } else {
       const savedDraft = localStorage.getItem(storageKey);
       if (savedDraft) {
         try {
           const parsedDraft = JSON.parse(savedDraft);
           console.log("Restoring from auto-save draft...");
-          restoreDataFromReport(parsedDraft);
+           // Restore basic fields
+           setCurrentReport(prev => ({
+            ...prev,
+            ...parsedDraft,
+            vesselId: vessel.id,
+            mode: mode,
+            shift: shift,
+            createdBy: user
+          }));
+
+          // Restore mechanical lists if present
+          if (parsedDraft.mechanicalDetails) {
+            setInternalMechList(parsedDraft.mechanicalDetails.filter((m: MechanicalDetail) => !m.isExternal));
+            
+            // Re-construct external groups
+            const externals = parsedDraft.mechanicalDetails.filter((m: MechanicalDetail) => m.isExternal);
+            const nameGroups: Record<string, MechanicalDetail[]> = {};
+            externals.forEach((m: MechanicalDetail) => {
+                const name = m.name || '';
+                if (!nameGroups[name]) nameGroups[name] = [];
+                nameGroups[name].push(m);
+            });
+
+            const loadedGroups: ExternalMechGroup[] = Object.entries(nameGroups).map(([name, items]) => {
+                const taskCounts: Record<string, number> = {};
+                items.forEach(m => {
+                    const t = m.task || handlingOptions[0];
+                    taskCounts[t] = (taskCounts[t] || 0) + 1;
+                });
+                const jobs: ExternalMechJob[] = Object.entries(taskCounts).map(([task, count]) => ({
+                    id: Math.random().toString(36).substr(2, 9),
+                    count,
+                    task
+                }));
+                return {
+                    id: Math.random().toString(36).substr(2, 9),
+                    name,
+                    jobs
+                };
+            });
+            setExternalGroups(loadedGroups);
+          }
+
           setLastSavedTime("Đã khôi phục bản nháp cũ");
         } catch (e) {
           console.error("Failed to restore draft", e);
@@ -148,7 +176,7 @@ const TallyReportView: React.FC<TallyReportViewProps> = ({ vessel, shift, mode, 
         }
       }
     }
-  }, [initialReport, storageKey, restoreDataFromReport]);
+  }, [initialReport, user, handlingOptions, storageKey, vessel.id, mode, shift]);
 
   // --- EFFECT: AUTO-SAVE ---
   useEffect(() => {
@@ -173,8 +201,9 @@ const TallyReportView: React.FC<TallyReportViewProps> = ({ vessel, shift, mode, 
   }, [currentReport, storageKey, internalMechList, externalGroups]);
 
 
-  // Sync mechanical counts/names
+  // Sync mechanical counts/names when lists change
   useEffect(() => {
+    // Expand external groups to details
     const expandedExternal: MechanicalDetail[] = [];
     externalGroups.forEach(g => {
         g.jobs.forEach(j => {
@@ -193,7 +222,7 @@ const TallyReportView: React.FC<TallyReportViewProps> = ({ vessel, shift, mode, 
         ...prev,
         mechanicalCount: internalMechList.length,
         externalMechanicalCount: expandedExternal.length,
-        mechanicalNames: internalMechList.map(m => m.name).join(', '),
+        mechanicalNames: internalMechList.map(m => m.name).join(', '), // Chỉ lưu tên nội bộ vào string cũ
         mechanicalDetails: allMech
     }));
   }, [internalMechList, externalGroups]);
@@ -238,6 +267,7 @@ const TallyReportView: React.FC<TallyReportViewProps> = ({ vessel, shift, mode, 
     return matchesSearch;
   });
 
+  // Calculate all currently used seals across all items to prevent duplicates
   const usedSealsSet = useMemo(() => {
     const set = new Set<string>();
     currentReport.items?.forEach(item => {
@@ -264,7 +294,7 @@ const TallyReportView: React.FC<TallyReportViewProps> = ({ vessel, shift, mode, 
     const newItem: TallyItem = {
       contId: itemId,
       contNo: cont.contNo,
-      size: cont.size,
+      size: cont.size, // Lưu kích thước
       commodityType: 'Giấy trắng có bọc',
       sealNo: cont.sealNo || '',
       actualUnits: cont.expectedUnits || 0,
@@ -347,12 +377,19 @@ const TallyReportView: React.FC<TallyReportViewProps> = ({ vessel, shift, mode, 
     updateItem(contId, 'photos', newPhotos);
   };
 
+  // Real-time validation for Step 1
   const isStep1Valid = useMemo(() => {
     const wCount = currentReport.workerCount || 0;
     const mCount = internalMechList.length;
+    // Calculate total external people
     const eCount = externalGroups.reduce((sum, g) => sum + g.jobs.reduce((js, j) => js + j.count, 0), 0);
 
-    if (wCount === 0 && mCount === 0 && eCount === 0) return false;
+    let activeFields = 0;
+    if (wCount > 0) activeFields++;
+    if (mCount > 0) activeFields++;
+    if (eCount > 0) activeFields++;
+
+    if (activeFields < 2) return false;
 
     if (wCount > 0) {
         const names = currentReport.workerNames ? currentReport.workerNames.split(',') : [];
@@ -360,7 +397,10 @@ const TallyReportView: React.FC<TallyReportViewProps> = ({ vessel, shift, mode, 
         if (filledNames.length < wCount) return false;
     }
     
+    // Check internal mechanical details
     if (internalMechList.some(m => !m.name || !m.name.trim() || !m.task)) return false;
+
+    // Check external groups
     if (externalGroups.some(g => !g.name || !g.name.trim() || g.jobs.length === 0 || g.jobs.some(j => j.count <= 0))) return false;
 
     if (!currentReport.equipment || currentReport.equipment.trim() === '') return false;
@@ -383,28 +423,6 @@ const TallyReportView: React.FC<TallyReportViewProps> = ({ vessel, shift, mode, 
       alert("Vui lòng điền đầy đủ thông tin chung (Bước 1)!");
       return false;
     }
-
-    // Duplicate Check: Workers
-    const workerNames = currentReport.workerNames ? currentReport.workerNames.split(',').map(n => n.trim()).filter(Boolean) : [];
-    if (new Set(workerNames).size !== workerNames.length) {
-        alert("Tên công nhân bị trùng lặp! Vui lòng kiểm tra lại danh sách.");
-        return false;
-    }
-
-    // Duplicate Check: Internal Mech
-    const mechNames = internalMechList.map(m => m.name.trim()).filter(Boolean);
-    if (new Set(mechNames).size !== mechNames.length) {
-        alert("Tên lái xe nội bộ bị trùng lặp! Vui lòng kiểm tra lại.");
-        return false;
-    }
-
-    // Duplicate Check: External Groups (Organizations)
-    const extNames = externalGroups.map(g => g.name.trim()).filter(Boolean);
-    if (new Set(extNames).size !== extNames.length) {
-        alert("Tên đơn vị thuê ngoài bị trùng lặp! Vui lòng gộp chung vào một nhóm.");
-        return false;
-    }
-
     if (!currentReport.items || currentReport.items.length === 0) {
       alert("Vui lòng chọn ít nhất một Container để khai thác!");
       return false;
@@ -435,12 +453,9 @@ const TallyReportView: React.FC<TallyReportViewProps> = ({ vessel, shift, mode, 
   };
 
   const handleFinalSave = (isDraft: boolean) => {
-    if (isSubmitting) return; // Prevent double submission
     if (!isDraft && !validateInfo()) {
       return;
     }
-    
-    setIsSubmitting(true);
     const report = { 
       ...currentReport, 
       id: currentReport.id || `PKH-${Date.now()}`, 
@@ -448,15 +463,12 @@ const TallyReportView: React.FC<TallyReportViewProps> = ({ vessel, shift, mode, 
       status: isDraft ? 'NHAP' : 'HOAN_TAT'
     } as TallyReport;
     
-    // CRITICAL FIX: Remove auto-save data from localStorage upon completion
+    // Remove auto-save data from localStorage upon completion
     if (!isDraft) {
         localStorage.removeItem(storageKey);
     }
 
-    setTimeout(() => {
-        onSave(report, isDraft);
-        setIsSubmitting(false);
-    }, 100);
+    onSave(report, isDraft);
   };
 
   const handleBack = () => {
@@ -476,20 +488,9 @@ const TallyReportView: React.FC<TallyReportViewProps> = ({ vessel, shift, mode, 
 
   // INTERNAL MECHANICAL HANDLERS
   const addInternalMechanical = () => {
-    // Auto-select next task logic (Rotate tasks)
-    let nextTask = handlingOptions[0];
-    if (internalMechList.length > 0) {
-        const lastTask = internalMechList[internalMechList.length - 1].task;
-        const idx = handlingOptions.indexOf(lastTask);
-        if (idx >= 0) {
-            // Cycle through options
-            nextTask = handlingOptions[(idx + 1) % handlingOptions.length];
-        }
-    }
-
     const newItem: MechanicalDetail = { 
         name: '', 
-        task: nextTask,
+        task: mode === 'NHAP' ? HANDLING_METHODS.MECHANICAL_IMPORT[0] : HANDLING_METHODS.MECHANICAL_EXPORT[0],
         isExternal: false 
     };
     setInternalMechList([...internalMechList, newItem]);
@@ -555,7 +556,7 @@ const TallyReportView: React.FC<TallyReportViewProps> = ({ vessel, shift, mode, 
   const pendingItems = (currentReport.items || []).filter(i => !isItemComplete(i));
   const completedItems = (currentReport.items || []).filter(i => isItemComplete(i));
   
-  const renderItemCard = (item: TallyItem, idx: number, isComplete: boolean) => {
+  const renderItemCard = (item: TallyItem, _idx: number, isComplete: boolean) => {
     const minPhotos = mode === 'NHAP' ? 5 : 1;
     const currentPhotoCount = item.photos?.length || 0;
     const isPhotoValid = currentPhotoCount >= minPhotos;
@@ -648,7 +649,7 @@ const TallyReportView: React.FC<TallyReportViewProps> = ({ vessel, shift, mode, 
                 <span className="text-[8px] font-bold text-gray-400 uppercase mt-1">Chụp/Tải</span>
             </label>
 
-            {item.photos?.map((photo, pIdx) => (
+            {item.photos?.map((photo: string, pIdx: number) => (
                 <div key={pIdx} className="relative aspect-square rounded-xl overflow-hidden shadow-sm group">
                     <img src={photo} alt={`Photo ${pIdx}`} className="w-full h-full object-cover" />
                     <button 
@@ -690,304 +691,298 @@ const TallyReportView: React.FC<TallyReportViewProps> = ({ vessel, shift, mode, 
 
   return (
     <div className="space-y-6 pb-40 animate-fade-in relative">
-      <div className="print:hidden">
-        {subStep === 1 && (
-            <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 space-y-6 animate-fade-in">
-            <h3 className="text-lg font-black text-blue-900 uppercase">1. Thông tin chung</h3>
-            
-            <div className="space-y-4 border-b border-gray-100 pb-6">
-                <h4 className="text-sm font-bold text-gray-600 flex items-center gap-2">
-                <span className="w-6 h-6 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-xs">CN</span>
-                Tổ Công Nhân
-                </h4>
-                <div className="grid grid-cols-3 gap-3">
-                    <div className="col-span-1">
-                        <label className="text-[9px] font-black text-gray-400 uppercase">Số lượng</label>
-                        <input type="number" min="0" className="w-full p-3 bg-gray-50 border border-gray-100 rounded-xl font-bold text-sm outline-none"
-                        value={currentReport.workerCount} onChange={e => setCurrentReport({...currentReport, workerCount: parseInt(e.target.value) || 0})} />
-                    </div>
-                    <div className="col-span-2">
-                        <label className="text-[9px] font-black text-gray-400 uppercase">Danh sách nhân sự</label>
-                        <div className="space-y-2 mt-1">
-                            {Array.from({length: currentReport.workerCount || 0}).map((_, idx) => {
-                                const currentName = currentReport.workerNames?.split(', ')[idx] || '';
-                                const selectedWorkers = currentReport.workerNames ? currentReport.workerNames.split(', ').filter(Boolean) : [];
-                                return (
-                                    <AutocompleteInput
-                                        key={idx}
-                                        value={currentName}
-                                        onChange={(val) => updateWorkerName(idx, val)}
-                                        options={getAvailableOptions(MOCK_WORKERS, selectedWorkers, currentName)}
-                                        placeholder={`Tên công nhân ${idx + 1}`}
-                                        className="w-full p-2.5 bg-gray-50 border border-gray-100 rounded-xl font-bold text-xs outline-none focus:ring-1 focus:ring-blue-100"
-                                    />
-                                );
-                            })}
-                            {(currentReport.workerCount || 0) === 0 && <p className="text-xs text-gray-300 italic">Nhập số lượng để hiện ô nhập tên</p>}
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <div className="space-y-4 border-b border-gray-100 pb-6">
-                <div className="flex justify-between items-center">
-                    <h4 className="text-sm font-bold text-gray-600 flex items-center gap-2">
-                        <span className="w-6 h-6 rounded-full bg-orange-100 text-orange-600 flex items-center justify-center text-xs">CG</span>
-                        Cơ Giới Nội Bộ (DNL)
-                    </h4>
-                    <button onClick={addInternalMechanical} className="text-[10px] font-black bg-orange-50 text-orange-600 px-3 py-1.5 rounded-lg border border-orange-100 uppercase">+ Thêm xe</button>
-                </div>
-                
-                <div className="space-y-3">
-                    {internalMechList.map((mech, index) => {
-                        const selectedDrivers = internalMechList.map(m => m.name).filter(Boolean);
-                        return (
-                            <div key={index} className="flex gap-2 items-start bg-orange-50/30 p-2 rounded-xl border border-orange-100">
-                                <div className="flex-1 space-y-2">
-                                    <AutocompleteInput
-                                        value={mech.name}
-                                        onChange={(val) => updateInternalMechanical(index, 'name', val)}
-                                        options={getAvailableOptions(MOCK_DRIVERS, selectedDrivers, mech.name)}
-                                        placeholder="Tên lái xe / Số xe"
-                                        className="w-full p-2 bg-white border border-orange-100 rounded-lg font-bold text-xs outline-none"
-                                    />
-                                    <select 
-                                        className="w-full p-2 bg-white border border-orange-100 rounded-lg font-bold text-xs outline-none"
-                                        value={mech.task}
-                                        onChange={(e) => updateInternalMechanical(index, 'task', e.target.value)}
-                                    >
-                                        {handlingOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
-                                    </select>
-                                </div>
-                                <button onClick={() => removeInternalMechanical(index)} className="p-2 text-red-400 hover:text-red-600">×</button>
-                            </div>
-                        );
-                    })}
-                </div>
-            </div>
-
-            <div className="space-y-4 border-b border-gray-100 pb-6">
-                <div className="flex justify-between items-center">
-                    <h4 className="text-sm font-bold text-gray-600 flex items-center gap-2">
-                        <span className="w-6 h-6 rounded-full bg-purple-100 text-purple-600 flex items-center justify-center text-xs">EXT</span>
-                        Cơ Giới Ngoài (Thuê)
-                    </h4>
-                    <button onClick={addExternalGroup} className="text-[10px] font-black bg-purple-50 text-purple-600 px-3 py-1.5 rounded-lg border border-purple-100 uppercase">+ Thêm đơn vị</button>
-                </div>
-                
-                <div className="space-y-4">
-                    {externalGroups.map((group, gIdx) => {
-                        const selectedUnits = externalGroups.map(g => g.name).filter(Boolean);
-                        return (
-                            <div key={group.id} className="bg-purple-50/30 p-3 rounded-xl border border-purple-100 space-y-3">
-                                <div className="flex gap-2">
-                                    <div className="flex-1">
-                                        <AutocompleteInput
-                                            value={group.name}
-                                            onChange={(val) => updateExternalGroupName(gIdx, val)}
-                                            options={getAvailableOptions(MOCK_EXTERNAL_UNITS, selectedUnits, group.name)}
-                                            placeholder="Tên đơn vị vận tải / cung ứng"
-                                            className="w-full p-2 bg-white border border-purple-200 rounded-lg font-bold text-xs outline-none text-purple-900"
-                                        />
-                                    </div>
-                                    <button onClick={() => removeExternalGroup(gIdx)} className="p-2 text-red-400 hover:text-red-600 bg-white rounded-lg border border-purple-100">Xóa</button>
-                                </div>
-
-                                <div className="pl-2 space-y-2 border-l-2 border-purple-200">
-                                    {group.jobs.map((job, jIdx) => (
-                                        <div key={job.id} className="flex gap-2 items-center">
-                                            <input 
-                                                type="number" 
-                                                min="1" 
-                                                className="w-16 p-2 bg-white border border-purple-100 rounded-lg font-bold text-xs text-center"
-                                                value={job.count}
-                                                onChange={(e) => updateExternalJob(gIdx, jIdx, 'count', parseInt(e.target.value) || 1)}
-                                            />
-                                            <select 
-                                                className="flex-1 p-2 bg-white border border-purple-100 rounded-lg font-bold text-xs outline-none"
-                                                value={job.task}
-                                                onChange={(e) => updateExternalJob(gIdx, jIdx, 'task', e.target.value)}
-                                            >
-                                                {handlingOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
-                                            </select>
-                                            <button onClick={() => removeExternalJob(gIdx, jIdx)} className="text-red-400 font-bold text-lg px-2">×</button>
-                                        </div>
-                                    ))}
-                                    <button onClick={() => addExternalJob(gIdx)} className="text-[10px] font-bold text-purple-500 underline decoration-dashed underline-offset-2">+ Thêm đầu việc</button>
-                                </div>
-                            </div>
-                        );
-                    })}
-                </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-                <div className="col-span-2">
-                    <label className="text-[9px] font-black text-gray-400 uppercase">Thiết bị sử dụng</label>
-                    <input className="w-full p-3 bg-gray-50 border border-gray-100 rounded-xl font-bold text-sm outline-none"
-                        value={currentReport.equipment} onChange={e => setCurrentReport({...currentReport, equipment: e.target.value})} />
-                </div>
-                <div>
-                    <label className="text-[9px] font-black text-gray-400 uppercase">Loại xe vận chuyển</label>
-                    <input className="w-full p-3 bg-gray-50 border border-gray-100 rounded-xl font-bold text-sm outline-none"
-                        value={currentReport.vehicleType} onChange={e => setCurrentReport({...currentReport, vehicleType: e.target.value})} />
-                </div>
-                <div>
-                    <label className="text-[9px] font-black text-gray-400 uppercase">Biển số xe</label>
-                    <input className="w-full p-3 bg-gray-50 border border-gray-100 rounded-xl font-bold text-sm outline-none uppercase"
-                        value={currentReport.vehicleNo} onChange={e => setCurrentReport({...currentReport, vehicleNo: e.target.value})} />
-                </div>
-            </div>
-            </div>
-        )}
-
-        {subStep === 2 && (
-            <div className="space-y-6">
-            <div className="bg-white p-4 rounded-3xl shadow-sm border border-gray-100 sticky top-0 z-30">
-                <label className="text-[10px] font-black text-gray-400 uppercase ml-1 block mb-2">Thêm Container vào Tally</label>
-                <div className="relative" ref={searchRef}>
-                    <input 
-                        type="text" 
-                        placeholder="Nhập số Container..." 
-                        className="w-full p-4 pl-12 bg-gray-50 border-2 border-blue-100 rounded-2xl font-black text-gray-800 outline-none focus:bg-white focus:border-blue-500 transition-all uppercase placeholder-gray-400 placeholder:text-xs"
-                        value={containerSearch}
-                        onChange={(e) => {
-                            setContainerSearch(e.target.value);
-                            setShowResults(true);
-                        }}
-                        onFocus={() => setShowResults(true)}
-                    />
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 absolute left-4 top-4 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                    </svg>
-
-                    {showResults && filteredSearchContainers.length > 0 && (
-                        <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-2xl shadow-2xl border border-gray-100 max-h-60 overflow-y-auto z-40">
-                            {filteredSearchContainers.map(c => (
-                                <div 
-                                    key={c.id} 
-                                    onClick={() => addContainerToReport(c)}
-                                    className="p-4 border-b border-gray-50 hover:bg-blue-50 cursor-pointer transition-colors group"
-                                >
-                                    <div className="flex justify-between items-center">
-                                        <span className="font-black text-gray-800 group-hover:text-blue-700">{c.contNo}</span>
-                                        {mode !== 'XUAT' && (
-                                            <span className="text-xs font-bold bg-gray-100 px-2 py-1 rounded text-gray-500">
-                                                {c.size.includes('20') ? "20'" : (c.size.includes('40') ? "40'" : c.size)}
-                                            </span>
-                                        )}
-                                    </div>
-                                    <div className="text-[10px] text-gray-400 mt-1 flex gap-3">
-                                    {mode !== 'XUAT' && <span>SEAL: {c.sealNo || '---'}</span>}
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    )}
-                    {showResults && containerSearch && filteredSearchContainers.length === 0 && (
-                        <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-2xl shadow-xl border border-gray-100 p-4 text-center text-sm text-gray-400 font-bold z-40">
-                            Không tìm thấy Container hoặc chưa đủ điều kiện khai thác.
-                        </div>
-                    )}
-                </div>
-            </div>
-
-            <div className="space-y-4 px-1">
-                {/* Pending Items */}
-                {pendingItems.map((item, idx) => renderItemCard(item, idx, false))}
-
-                {/* Separator if needed */}
-                {completedItems.length > 0 && pendingItems.length > 0 && (
-                    <div className="flex items-center gap-4 py-4">
-                        <div className="h-px bg-green-200 flex-1"></div>
-                        <span className="text-xs font-black text-green-600 uppercase">Đã hoàn tất ({completedItems.length})</span>
-                        <div className="h-px bg-green-200 flex-1"></div>
-                    </div>
-                )}
-
-                {/* Completed Items (Collapsed View Optional, here Full View for Review) */}
-                {completedItems.map((item, idx) => renderItemCard(item, idx, true))}
-                
-                {/* Empty State */}
-                {(currentReport.items || []).length === 0 && (
-                    <div className="text-center py-10 opacity-50">
-                        <svg className="w-16 h-16 mx-auto text-gray-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"/></svg>
-                        <p className="text-sm font-bold text-gray-400">Chưa có container nào được thêm.</p>
-                    </div>
-                )}
-            </div>
-            </div>
-        )}
-
-        {/* Footer Actions */}
-        <div className="fixed bottom-0 left-0 right-0 p-4 bg-white/95 backdrop-blur-md border-t border-gray-100 z-50 shadow-[0_-4px_20px_rgba(0,0,0,0.05)]">
-            <div className="max-w-4xl mx-auto flex gap-3">
-                <button 
-                    onClick={handleBack}
-                    className="px-6 py-3 rounded-2xl bg-gray-100 text-gray-500 font-black uppercase text-[11px] active:scale-95 transition-all hover:bg-gray-200"
-                >
-                    Quay lại
-                </button>
-                
-                {subStep === 1 ? (
-                    <button 
-                        onClick={handleNextStep}
-                        disabled={!isStep1Valid}
-                        className={`flex-1 py-3 rounded-2xl font-black uppercase text-[11px] shadow-xl active:scale-95 transition-all ${isStep1Valid ? 'bg-blue-600 text-white hover:bg-blue-700 shadow-blue-200' : 'bg-gray-200 text-gray-400 cursor-not-allowed'}`}
-                    >
-                        TIẾP THEO
-                    </button>
-                ) : (
-                    <>
-                        <button 
-                            onClick={() => handleFinalSave(true)}
-                            disabled={isSubmitting}
-                            className="flex-1 py-3 rounded-2xl bg-blue-100 text-blue-700 font-black uppercase text-[11px] active:scale-95 transition-all hover:bg-blue-200 disabled:opacity-50"
-                        >
-                            LƯU NHÁP
-                        </button>
-                        <button 
-                            onClick={() => handleFinalSave(false)}
-                            disabled={isSubmitting}
-                            className="flex-1 py-3 rounded-2xl bg-gradient-to-r from-green-500 to-emerald-600 text-white font-black uppercase text-[11px] shadow-xl shadow-green-200 active:scale-95 transition-all hover:brightness-110 flex flex-col items-center justify-center leading-tight disabled:opacity-50"
-                        >
-                            {isSubmitting ? 'ĐANG XỬ LÝ...' : 'HOÀN TẤT'}
-                        </button>
-                    </>
-                )}
-            </div>
-        </div>
-
-        {/* Print Preview Overlay */}
-        {isPreviewing && (
-            <div className="fixed inset-0 z-[100] bg-gray-900 overflow-y-auto print:hidden">
-            <div className="sticky top-0 p-4 bg-gray-800 text-white flex justify-between items-center shadow-lg">
-                <button onClick={() => setIsPreviewing(false)} className="flex items-center gap-2 text-sm font-bold uppercase tracking-tight hover:text-blue-400">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
-                QUAY LẠI
-                </button>
-                <div className="text-xs font-black text-gray-400 uppercase tracking-widest">
-                Xem trước phiếu in
-                </div>
-                <div className="flex gap-2">
-                    <button onClick={() => window.print()} className="bg-blue-600 px-6 py-2 rounded-xl font-black text-xs uppercase tracking-widest shadow-lg hover:bg-blue-500 active:scale-95 transition-all">
-                    IN NGAY
-                    </button>
-                    <button onClick={onFinish} className="bg-green-600 px-6 py-2 rounded-xl font-black text-xs uppercase tracking-widest shadow-lg hover:bg-green-500 active:scale-95 transition-all">
-                    XONG
-                    </button>
-                </div>
-            </div>
-            <div className="p-4 flex justify-center bg-gray-700 min-h-screen">
-                <TallyPrintTemplate 
-                    report={currentReport as TallyReport} 
-                    vessel={vessel} 
-                    isPreview={true} 
-                />
-            </div>
-            </div>
-        )}
+      {/* Step Indicator */}
+      <div className="flex items-center gap-2 mb-6 px-2">
+        <div className={`h-1.5 flex-1 rounded-full transition-all ${subStep >= 1 ? 'bg-blue-600' : 'bg-gray-200'}`}></div>
+        <div className={`h-1.5 flex-1 rounded-full transition-all ${subStep >= 2 ? 'bg-blue-600' : 'bg-gray-200'}`}></div>
       </div>
+
+      {subStep === 1 && (
+        <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 space-y-6 animate-fade-in">
+          <h3 className="text-lg font-black text-blue-900 uppercase">1. Thông tin chung</h3>
+          
+          <div className="space-y-4 border-b border-gray-100 pb-6">
+            <h4 className="text-sm font-bold text-gray-600 flex items-center gap-2">
+               <span className="w-6 h-6 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-xs">CN</span>
+               Tổ Công Nhân
+            </h4>
+            <div className="grid grid-cols-3 gap-3">
+                <div className="col-span-1">
+                    <label className="text-[9px] font-black text-gray-400 uppercase">Số lượng</label>
+                    <input type="number" min="0" className="w-full p-3 bg-gray-50 border border-gray-100 rounded-xl font-bold text-sm outline-none"
+                    value={currentReport.workerCount} onChange={e => setCurrentReport({...currentReport, workerCount: parseInt(e.target.value) || 0})} />
+                </div>
+                <div className="col-span-2">
+                     <label className="text-[9px] font-black text-gray-400 uppercase">Danh sách nhân sự</label>
+                     <div className="space-y-2 mt-1">
+                        {Array.from({length: currentReport.workerCount || 0}).map((_, idx) => (
+                             <AutocompleteInput
+                                key={idx}
+                                value={(currentReport.workerNames?.split(', ')[idx]) || ''}
+                                onChange={(val: string) => updateWorkerName(idx, val)}
+                                options={MOCK_WORKERS}
+                                placeholder={`Tên công nhân ${idx + 1}`}
+                                className="w-full p-2.5 bg-gray-50 border border-gray-100 rounded-xl font-bold text-xs outline-none focus:ring-1 focus:ring-blue-100"
+                             />
+                        ))}
+                        {(currentReport.workerCount || 0) === 0 && <p className="text-xs text-gray-300 italic">Nhập số lượng để hiện ô nhập tên</p>}
+                     </div>
+                </div>
+            </div>
+          </div>
+
+          <div className="space-y-4 border-b border-gray-100 pb-6">
+             <div className="flex justify-between items-center">
+                <h4 className="text-sm font-bold text-gray-600 flex items-center gap-2">
+                    <span className="w-6 h-6 rounded-full bg-orange-100 text-orange-600 flex items-center justify-center text-xs">CG</span>
+                    Cơ Giới Nội Bộ (DNL)
+                </h4>
+                <button onClick={addInternalMechanical} className="text-[10px] font-black bg-orange-50 text-orange-600 px-3 py-1.5 rounded-lg border border-orange-100 uppercase">+ Thêm xe</button>
+             </div>
+             
+             {internalMechList.length === 0 && <p className="text-xs text-gray-300 italic text-center py-2">Chưa có cơ giới nội bộ</p>}
+             
+             <div className="space-y-3">
+                {internalMechList.map((mech, index) => (
+                    <div key={index} className="flex gap-2 items-start bg-orange-50/30 p-2 rounded-xl border border-orange-100">
+                        <div className="flex-1 space-y-2">
+                             <AutocompleteInput
+                                value={mech.name}
+                                onChange={(val: string) => updateInternalMechanical(index, 'name', val)}
+                                options={MOCK_DRIVERS}
+                                placeholder="Tên lái xe / Số xe"
+                                className="w-full p-2 bg-white border border-orange-100 rounded-lg font-bold text-xs outline-none"
+                             />
+                             <select 
+                                className="w-full p-2 bg-white border border-orange-100 rounded-lg font-bold text-xs outline-none"
+                                value={mech.task}
+                                onChange={(e) => updateInternalMechanical(index, 'task', e.target.value)}
+                             >
+                                {handlingOptions.map((opt: string) => <option key={opt} value={opt}>{opt}</option>)}
+                             </select>
+                        </div>
+                        <button onClick={() => removeInternalMechanical(index)} className="p-2 text-red-400 hover:text-red-600">×</button>
+                    </div>
+                ))}
+             </div>
+          </div>
+
+          <div className="space-y-4 border-b border-gray-100 pb-6">
+             <div className="flex justify-between items-center">
+                <h4 className="text-sm font-bold text-gray-600 flex items-center gap-2">
+                    <span className="w-6 h-6 rounded-full bg-purple-100 text-purple-600 flex items-center justify-center text-xs">EXT</span>
+                    Cơ Giới Ngoài (Thuê)
+                </h4>
+                <button onClick={addExternalGroup} className="text-[10px] font-black bg-purple-50 text-purple-600 px-3 py-1.5 rounded-lg border border-purple-100 uppercase">+ Thêm đơn vị</button>
+             </div>
+             
+             {externalGroups.length === 0 && <p className="text-xs text-gray-300 italic text-center py-2">Chưa có đơn vị thuê ngoài</p>}
+             
+             <div className="space-y-4">
+                {externalGroups.map((group, gIdx) => (
+                    <div key={group.id} className="bg-purple-50/30 p-3 rounded-xl border border-purple-100 space-y-3">
+                        <div className="flex gap-2">
+                            <div className="flex-1">
+                                <AutocompleteInput
+                                    value={group.name}
+                                    onChange={(val: string) => updateExternalGroupName(gIdx, val)}
+                                    options={MOCK_EXTERNAL_UNITS}
+                                    placeholder="Tên đơn vị vận tải / cung ứng"
+                                    className="w-full p-2 bg-white border border-purple-200 rounded-lg font-bold text-xs outline-none text-purple-900"
+                                />
+                            </div>
+                            <button onClick={() => removeExternalGroup(gIdx)} className="p-2 text-red-400 hover:text-red-600 bg-white rounded-lg border border-purple-100">Xóa</button>
+                        </div>
+
+                        <div className="pl-2 space-y-2 border-l-2 border-purple-200">
+                             {group.jobs.map((job, jIdx) => (
+                                 <div key={job.id} className="flex gap-2 items-center">
+                                     <input 
+                                        type="number" 
+                                        min="1" 
+                                        className="w-16 p-2 bg-white border border-purple-100 rounded-lg font-bold text-xs text-center"
+                                        value={job.count}
+                                        onChange={(e) => updateExternalJob(gIdx, jIdx, 'count', parseInt(e.target.value) || 1)}
+                                     />
+                                     <select 
+                                        className="flex-1 p-2 bg-white border border-purple-100 rounded-lg font-bold text-xs outline-none"
+                                        value={job.task}
+                                        onChange={(e) => updateExternalJob(gIdx, jIdx, 'task', e.target.value)}
+                                     >
+                                        {handlingOptions.map((opt: string) => <option key={opt} value={opt}>{opt}</option>)}
+                                     </select>
+                                     <button onClick={() => removeExternalJob(gIdx, jIdx)} className="text-red-400 font-bold text-lg px-2">×</button>
+                                 </div>
+                             ))}
+                             <button onClick={() => addExternalJob(gIdx)} className="text-[10px] font-bold text-purple-500 underline decoration-dashed underline-offset-2">+ Thêm đầu việc</button>
+                        </div>
+                    </div>
+                ))}
+             </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+             <div className="col-span-2">
+                <label className="text-[9px] font-black text-gray-400 uppercase">Thiết bị sử dụng</label>
+                <input className="w-full p-3 bg-gray-50 border border-gray-100 rounded-xl font-bold text-sm outline-none"
+                    value={currentReport.equipment} onChange={e => setCurrentReport({...currentReport, equipment: e.target.value})} />
+             </div>
+             <div>
+                <label className="text-[9px] font-black text-gray-400 uppercase">Loại xe vận chuyển</label>
+                <input className="w-full p-3 bg-gray-50 border border-gray-100 rounded-xl font-bold text-sm outline-none"
+                    value={currentReport.vehicleType} onChange={e => setCurrentReport({...currentReport, vehicleType: e.target.value})} />
+             </div>
+             <div>
+                <label className="text-[9px] font-black text-gray-400 uppercase">Biển số xe</label>
+                <input className="w-full p-3 bg-gray-50 border border-gray-100 rounded-xl font-bold text-sm outline-none uppercase"
+                    value={currentReport.vehicleNo} onChange={e => setCurrentReport({...currentReport, vehicleNo: e.target.value})} />
+             </div>
+          </div>
+        </div>
+      )}
+
+      {subStep === 2 && (
+        <div className="space-y-6">
+           <div className="bg-white p-4 rounded-3xl shadow-sm border border-gray-100 sticky top-0 z-30">
+              <label className="text-[10px] font-black text-gray-400 uppercase ml-1 block mb-2">Thêm Container vào Tally</label>
+              <div className="relative" ref={searchRef}>
+                 <input 
+                    type="text" 
+                    placeholder="Nhập số Container..." 
+                    className="w-full p-4 pl-12 bg-gray-50 border-2 border-blue-100 rounded-2xl font-black text-gray-800 outline-none focus:bg-white focus:border-blue-500 transition-all uppercase placeholder-gray-400"
+                    value={containerSearch}
+                    onChange={(e) => {
+                        setContainerSearch(e.target.value);
+                        setShowResults(true);
+                    }}
+                    onFocus={() => setShowResults(true)}
+                 />
+                 <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 absolute left-4 top-4 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                 </svg>
+
+                 {showResults && filteredSearchContainers.length > 0 && (
+                    <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-2xl shadow-2xl border border-gray-100 max-h-60 overflow-y-auto z-40">
+                        {filteredSearchContainers.map((c: Container) => (
+                            <div 
+                                key={c.id} 
+                                onClick={() => addContainerToReport(c)}
+                                className="p-4 border-b border-gray-50 hover:bg-blue-50 cursor-pointer transition-colors group"
+                            >
+                                <div className="flex justify-between items-center">
+                                    <span className="font-black text-gray-800 group-hover:text-blue-700">{c.contNo}</span>
+                                    <span className="text-xs font-bold bg-gray-100 px-2 py-1 rounded text-gray-500">{c.size}</span>
+                                </div>
+                                <div className="text-[10px] text-gray-400 mt-1 flex gap-3">
+                                   <span>SEAL: {c.sealNo || '---'}</span>
+                                   {c.tkHouse && <span className="text-blue-400">Có tờ khai</span>}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                 )}
+                 {showResults && containerSearch && filteredSearchContainers.length === 0 && (
+                     <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-2xl shadow-xl border border-gray-100 p-4 text-center text-sm text-gray-400 font-bold z-40">
+                        Không tìm thấy Container hoặc chưa đủ điều kiện khai thác.
+                     </div>
+                 )}
+              </div>
+           </div>
+
+           <div className="space-y-4 px-1">
+               {/* Pending Items */}
+               {pendingItems.map((item: TallyItem, idx: number) => renderItemCard(item, idx, false))}
+
+               {/* Separator if needed */}
+               {completedItems.length > 0 && pendingItems.length > 0 && (
+                   <div className="flex items-center gap-4 py-4">
+                       <div className="h-px bg-green-200 flex-1"></div>
+                       <span className="text-xs font-black text-green-600 uppercase">Đã hoàn tất ({completedItems.length})</span>
+                       <div className="h-px bg-green-200 flex-1"></div>
+                   </div>
+               )}
+
+               {/* Completed Items (Collapsed View Optional, here Full View for Review) */}
+               {completedItems.map((item: TallyItem, idx: number) => renderItemCard(item, idx, true))}
+               
+               {/* Empty State */}
+               {(currentReport.items || []).length === 0 && (
+                   <div className="text-center py-10 opacity-50">
+                       <svg className="w-16 h-16 mx-auto text-gray-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4"/></svg>
+                       <p className="text-sm font-bold text-gray-400">Chưa có container nào được thêm.</p>
+                   </div>
+               )}
+           </div>
+        </div>
+      )}
+
+      {/* Footer Actions */}
+      <div className="fixed bottom-0 left-0 right-0 p-4 bg-white/95 backdrop-blur-md border-t border-gray-100 z-50 shadow-[0_-4px_20px_rgba(0,0,0,0.05)]">
+        <div className="max-w-4xl mx-auto flex gap-3">
+             <button 
+                onClick={handleBack}
+                className="px-6 py-4 rounded-2xl bg-gray-100 text-gray-500 font-black uppercase text-[11px] active:scale-95 transition-all hover:bg-gray-200"
+             >
+                Quay lại
+             </button>
+             
+             {subStep === 1 ? (
+                 <button 
+                    onClick={handleNextStep}
+                    disabled={!isStep1Valid}
+                    className={`flex-1 py-4 rounded-2xl font-black uppercase text-[11px] shadow-xl active:scale-95 transition-all ${isStep1Valid ? 'bg-blue-600 text-white hover:bg-blue-700 shadow-blue-200' : 'bg-gray-200 text-gray-400 cursor-not-allowed'}`}
+                 >
+                    Tiếp theo (Nhập hàng)
+                 </button>
+             ) : (
+                 <>
+                    <button 
+                        onClick={() => handleFinalSave(true)}
+                        className="flex-1 py-4 rounded-2xl bg-blue-100 text-blue-700 font-black uppercase text-[11px] active:scale-95 transition-all hover:bg-blue-200"
+                    >
+                        Lưu nháp
+                    </button>
+                    <button 
+                        onClick={() => handleFinalSave(false)}
+                        className="flex-1 py-4 rounded-2xl bg-gradient-to-r from-green-500 to-emerald-600 text-white font-black uppercase text-[11px] shadow-xl shadow-green-200 active:scale-95 transition-all hover:brightness-110 flex flex-col items-center justify-center leading-tight"
+                    >
+                        <span>Hoàn tất & In</span>
+                        <span className="text-[8px] opacity-80 font-normal normal-case">Tự động tạo phiếu CT</span>
+                    </button>
+                 </>
+             )}
+        </div>
+      </div>
+
+      {/* Print Preview Overlay */}
+      {isPreviewing && (
+        <div className="fixed inset-0 z-[100] bg-gray-900 overflow-y-auto print:hidden">
+          <div className="sticky top-0 p-4 bg-gray-800 text-white flex justify-between items-center shadow-lg">
+            <button onClick={() => setIsPreviewing(false)} className="flex items-center gap-2 text-sm font-bold uppercase tracking-tight hover:text-blue-400">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
+              QUAY LẠI
+            </button>
+            <div className="text-xs font-black text-gray-400 uppercase tracking-widest">
+               Xem trước phiếu in
+            </div>
+            <div className="flex gap-2">
+                <button onClick={() => window.print()} className="bg-blue-600 px-6 py-2 rounded-xl font-black text-xs uppercase tracking-widest shadow-lg hover:bg-blue-500 active:scale-95 transition-all">
+                IN NGAY
+                </button>
+                <button onClick={onFinish} className="bg-green-600 px-6 py-2 rounded-xl font-black text-xs uppercase tracking-widest shadow-lg hover:bg-green-500 active:scale-95 transition-all">
+                XONG
+                </button>
+            </div>
+          </div>
+          <div className="p-4 flex justify-center bg-gray-700 min-h-screen">
+             <TallyPrintTemplate 
+                report={currentReport as TallyReport} 
+                vessel={vessel} 
+                isPreview={true} 
+             />
+          </div>
+        </div>
+      )}
       
       {/* Hidden Print Content */}
       <div className="hidden print:block">
