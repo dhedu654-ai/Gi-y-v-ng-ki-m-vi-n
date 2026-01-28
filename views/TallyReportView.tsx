@@ -260,7 +260,7 @@ const TallyReportView: React.FC<TallyReportViewProps> = ({ vessel, shift, mode, 
     const isExploitable = mode === 'XUAT' || (c.tkHouse && c.tkDnl);
     if (!isExploitable) return false;
 
-    const isAlreadyAdded = mode !== 'XUAT' && currentReport.items?.some(i => i.contId === c.id);
+    const isAlreadyAdded = mode !== 'XUAT' && currentReport.items?.some((i: TallyItem) => i.contId === c.id);
     if (isAlreadyAdded) return false;
 
     const matchesSearch = c.contNo.toLowerCase().includes(containerSearch.toLowerCase());
