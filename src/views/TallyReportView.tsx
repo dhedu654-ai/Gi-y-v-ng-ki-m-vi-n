@@ -33,7 +33,6 @@ interface ExternalMechGroup {
 const TallyReportView: React.FC<TallyReportViewProps> = ({ vessel, shift, mode, workDate, user, initialReport, onSave, onFinish, onBack }) => {
   const [subStep, setSubStep] = useState<1 | 2>(1);
   const [isPreviewing, setIsPreviewing] = useState(false);
-  const [, setLastSavedTime] = useState<string | null>(null);
   
   // State quản lý danh sách cơ giới nội bộ (Chi tiết từng người)
   const [internalMechList, setInternalMechList] = useState<MechanicalDetail[]>([]);
@@ -68,12 +67,6 @@ const TallyReportView: React.FC<TallyReportViewProps> = ({ vessel, shift, mode, 
     mode === 'NHAP' ? HANDLING_METHODS.MECHANICAL_IMPORT : HANDLING_METHODS.MECHANICAL_EXPORT, 
   [mode]);
 
-  // --- LOCAL STORAGE KEY GENERATION ---
-  const storageKey = useMemo(() => {
-    return `DANALOG_AUTOSAVE_${user}_${vessel.id}_${mode}_${shift}`;
-  }, [user, vessel.id, mode, shift]);
-
-  // --- EFFECT: INITIALIZE DATA ---
   useEffect(() => {
     if (initialReport) {
       setCurrentReport({
@@ -83,14 +76,14 @@ const TallyReportView: React.FC<TallyReportViewProps> = ({ vessel, shift, mode, 
       
       if (initialReport.mechanicalDetails) {
         // Restore internal
-        setInternalMechList(initialReport.mechanicalDetails.filter((m: MechanicalDetail) => !m.isExternal));
+        setInternalMechList(initialReport.mechanicalDetails.filter(m => !m.isExternal));
         
         // Restore external groups logic
-        const externals = initialReport.mechanicalDetails.filter((m: MechanicalDetail) => m.isExternal);
+        const externals = initialReport.mechanicalDetails.filter(m => m.isExternal);
         
         // 1. Group by Name
         const nameGroups: Record<string, MechanicalDetail[]> = {};
-        externals.forEach((m: MechanicalDetail) => {
+        externals.forEach(m => {
             const name = m.name || '';
             if (!nameGroups[name]) nameGroups[name] = [];
             nameGroups[name].push(m);
@@ -100,7 +93,7 @@ const TallyReportView: React.FC<TallyReportViewProps> = ({ vessel, shift, mode, 
         const loadedGroups: ExternalMechGroup[] = Object.entries(nameGroups).map(([name, items]) => {
             // Within name, group by task to form jobs
             const taskCounts: Record<string, number> = {};
-            items.forEach((m: MechanicalDetail) => {
+            items.forEach(m => {
                 const t = m.task || handlingOptions[0];
                 taskCounts[t] = (taskCounts[t] || 0) + 1;
             });
@@ -120,93 +113,15 @@ const TallyReportView: React.FC<TallyReportViewProps> = ({ vessel, shift, mode, 
         
         setExternalGroups(loadedGroups);
       }
-    } else {
-      const savedDraft = localStorage.getItem(storageKey);
-      if (savedDraft) {
-        try {
-          const parsedDraft = JSON.parse(savedDraft);
-          console.log("Restoring from auto-save draft...");
-           // Restore basic fields
-           setCurrentReport(prev => ({
-            ...prev,
-            ...parsedDraft,
-            vesselId: vessel.id,
-            mode: mode,
-            shift: shift,
-            createdBy: user
-          }));
-
-          // Restore mechanical lists if present
-          if (parsedDraft.mechanicalDetails) {
-            setInternalMechList(parsedDraft.mechanicalDetails.filter((m: MechanicalDetail) => !m.isExternal));
-            
-            // Re-construct external groups
-            const externals = parsedDraft.mechanicalDetails.filter((m: MechanicalDetail) => m.isExternal);
-            const nameGroups: Record<string, MechanicalDetail[]> = {};
-            externals.forEach((m: MechanicalDetail) => {
-                const name = m.name || '';
-                if (!nameGroups[name]) nameGroups[name] = [];
-                nameGroups[name].push(m);
-            });
-
-            const loadedGroups: ExternalMechGroup[] = Object.entries(nameGroups).map(([name, items]) => {
-                const taskCounts: Record<string, number> = {};
-                items.forEach((m: MechanicalDetail) => {
-                    const t = m.task || handlingOptions[0];
-                    taskCounts[t] = (taskCounts[t] || 0) + 1;
-                });
-                const jobs: ExternalMechJob[] = Object.entries(taskCounts).map(([task, count]) => ({
-                    id: Math.random().toString(36).substr(2, 9),
-                    count,
-                    task
-                }));
-                return {
-                    id: Math.random().toString(36).substr(2, 9),
-                    name,
-                    jobs
-                };
-            });
-            setExternalGroups(loadedGroups);
-          }
-
-          setLastSavedTime("Đã khôi phục bản nháp cũ");
-        } catch (e) {
-          console.error("Failed to restore draft", e);
-          localStorage.removeItem(storageKey);
-        }
-      }
     }
-  }, [initialReport, user, handlingOptions, storageKey, vessel.id, mode, shift]);
-
-  // --- EFFECT: AUTO-SAVE ---
-  useEffect(() => {
-    const hasData = (currentReport.items && currentReport.items.length > 0) || 
-                    (currentReport.workerCount && currentReport.workerCount > 0) ||
-                    internalMechList.length > 0;
-
-    if (!hasData) return;
-
-    const timer = setTimeout(() => {
-        const dataToSave = {
-            ...currentReport,
-            lastUpdated: Date.now()
-        };
-        localStorage.setItem(storageKey, JSON.stringify(dataToSave));
-        
-        const now = new Date();
-        setLastSavedTime(`Đã lưu tự động lúc ${now.getHours()}:${now.getMinutes().toString().padStart(2, '0')}`);
-    }, 1000);
-
-    return () => clearTimeout(timer);
-  }, [currentReport, storageKey, internalMechList, externalGroups]);
-
+  }, [initialReport, user, handlingOptions]);
 
   // Sync mechanical counts/names when lists change
   useEffect(() => {
     // Expand external groups to details
     const expandedExternal: MechanicalDetail[] = [];
-    externalGroups.forEach((g: ExternalMechGroup) => {
-        g.jobs.forEach((j: ExternalMechJob) => {
+    externalGroups.forEach(g => {
+        g.jobs.forEach(j => {
              for(let i=0; i < j.count; i++) {
                 expandedExternal.push({
                     name: g.name,
@@ -222,7 +137,7 @@ const TallyReportView: React.FC<TallyReportViewProps> = ({ vessel, shift, mode, 
         ...prev,
         mechanicalCount: internalMechList.length,
         externalMechanicalCount: expandedExternal.length,
-        mechanicalNames: internalMechList.map((m: MechanicalDetail) => m.name).join(', '), // Chỉ lưu tên nội bộ vào string cũ
+        mechanicalNames: internalMechList.map(m => m.name).join(', '), // Chỉ lưu tên nội bộ vào string cũ
         mechanicalDetails: allMech
     }));
   }, [internalMechList, externalGroups]);
@@ -241,7 +156,7 @@ const TallyReportView: React.FC<TallyReportViewProps> = ({ vessel, shift, mode, 
     if (mode === 'XUAT') {
         return MOCK_TRANSPORT_VEHICLES
           .filter(v => v.status === 'ACTIVE')
-          .map((v, i: number) => ({
+          .map((v, i) => ({
             id: `veh-${i}`,
             contNo: v.plate,
             size: 'XE TẢI',
@@ -256,11 +171,11 @@ const TallyReportView: React.FC<TallyReportViewProps> = ({ vessel, shift, mode, 
     return MOCK_CONTAINERS[vessel.id] || [];
   }, [vessel.id, mode]);
   
-  const filteredSearchContainers = availableContainers.filter((c: Container) => {
+  const filteredSearchContainers = availableContainers.filter(c => {
     const isExploitable = mode === 'XUAT' || (c.tkHouse && c.tkDnl);
     if (!isExploitable) return false;
 
-    const isAlreadyAdded = mode !== 'XUAT' && currentReport.items?.some((i: TallyItem) => i.contId === c.id);
+    const isAlreadyAdded = mode !== 'XUAT' && currentReport.items?.some(i => i.contId === c.id);
     if (isAlreadyAdded) return false;
 
     const matchesSearch = c.contNo.toLowerCase().includes(containerSearch.toLowerCase());
@@ -270,9 +185,9 @@ const TallyReportView: React.FC<TallyReportViewProps> = ({ vessel, shift, mode, 
   // Calculate all currently used seals across all items to prevent duplicates
   const usedSealsSet = useMemo(() => {
     const set = new Set<string>();
-    currentReport.items?.forEach((item: TallyItem) => {
+    currentReport.items?.forEach(item => {
         if (item.sealNo) {
-            item.sealNo.split(', ').forEach((s: string) => {
+            item.sealNo.split(', ').forEach(s => {
                 if (s && s.trim()) set.add(s.trim());
             });
         }
@@ -324,7 +239,7 @@ const TallyReportView: React.FC<TallyReportViewProps> = ({ vessel, shift, mode, 
     if (mode === 'XUAT') {
       if (!item.sealCount || item.sealCount <= 0) return false;
       const seals = item.sealNo ? item.sealNo.split(', ') : [];
-      const filledSeals = seals.filter((s: string) => s && s.trim().length > 0);
+      const filledSeals = seals.filter(s => s && s.trim().length > 0);
       if (filledSeals.length < item.sealCount) return false;
     }
 
@@ -332,14 +247,14 @@ const TallyReportView: React.FC<TallyReportViewProps> = ({ vessel, shift, mode, 
   };
 
   const updateItem = (contId: string, field: keyof TallyItem, value: any) => {
-    const newItems = currentReport.items!.map((item: TallyItem) => 
+    const newItems = currentReport.items!.map(item => 
       item.contId === contId ? { ...item, [field]: value } : item
     );
     setCurrentReport(prev => ({ ...prev, items: newItems }));
   };
 
   const updateSealValue = (contId: string, sealIndex: number, value: string) => {
-    const item = currentReport.items!.find((i: TallyItem) => i.contId === contId);
+    const item = currentReport.items!.find(i => i.contId === contId);
     if (!item) return;
 
     const seals = item.sealNo ? item.sealNo.split(', ') : [];
@@ -351,7 +266,7 @@ const TallyReportView: React.FC<TallyReportViewProps> = ({ vessel, shift, mode, 
   const handlePhotoUpload = (contId: string, e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       const files = Array.from(e.target.files) as File[];
-      const item = currentReport.items?.find((i: TallyItem) => i.contId === contId);
+      const item = currentReport.items?.find(i => i.contId === contId);
       if (!item) return;
 
       const newPhotos = [...(item.photos || [])];
@@ -370,10 +285,10 @@ const TallyReportView: React.FC<TallyReportViewProps> = ({ vessel, shift, mode, 
   };
 
   const removePhoto = (contId: string, photoIndex: number) => {
-    const item = currentReport.items?.find((i: TallyItem) => i.contId === contId);
+    const item = currentReport.items?.find(i => i.contId === contId);
     if (!item || !item.photos) return;
     
-    const newPhotos = item.photos.filter((_: string, idx: number) => idx !== photoIndex);
+    const newPhotos = item.photos.filter((_, idx) => idx !== photoIndex);
     updateItem(contId, 'photos', newPhotos);
   };
 
@@ -382,7 +297,7 @@ const TallyReportView: React.FC<TallyReportViewProps> = ({ vessel, shift, mode, 
     const wCount = currentReport.workerCount || 0;
     const mCount = internalMechList.length;
     // Calculate total external people
-    const eCount = externalGroups.reduce((sum: number, g: ExternalMechGroup) => sum + g.jobs.reduce((js: number, j: ExternalMechJob) => js + j.count, 0), 0);
+    const eCount = externalGroups.reduce((sum, g) => sum + g.jobs.reduce((js, j) => js + j.count, 0), 0);
 
     let activeFields = 0;
     if (wCount > 0) activeFields++;
@@ -393,15 +308,15 @@ const TallyReportView: React.FC<TallyReportViewProps> = ({ vessel, shift, mode, 
 
     if (wCount > 0) {
         const names = currentReport.workerNames ? currentReport.workerNames.split(',') : [];
-        const filledNames = names.filter((n: string) => n && n.trim().length > 0);
+        const filledNames = names.filter(n => n && n.trim().length > 0);
         if (filledNames.length < wCount) return false;
     }
     
     // Check internal mechanical details
-    if (internalMechList.some((m: MechanicalDetail) => !m.name || !m.name.trim() || !m.task)) return false;
+    if (internalMechList.some(m => !m.name || !m.name.trim() || !m.task)) return false;
 
     // Check external groups
-    if (externalGroups.some((g: ExternalMechGroup) => !g.name || !g.name.trim() || g.jobs.length === 0 || g.jobs.some((j: ExternalMechJob) => j.count <= 0))) return false;
+    if (externalGroups.some(g => !g.name || !g.name.trim() || g.jobs.length === 0 || g.jobs.some(j => j.count <= 0))) return false;
 
     if (!currentReport.equipment || currentReport.equipment.trim() === '') return false;
     if (!currentReport.vehicleType || currentReport.vehicleType.trim() === '') return false;
@@ -428,15 +343,15 @@ const TallyReportView: React.FC<TallyReportViewProps> = ({ vessel, shift, mode, 
       return false;
     }
     
-    const incompleteItems = currentReport.items.filter((item: TallyItem) => !isItemComplete(item));
+    const incompleteItems = currentReport.items.filter(item => !isItemComplete(item));
     if (incompleteItems.length > 0) {
         const minPhotos = mode === 'NHAP' ? 5 : 1;
-        const names = incompleteItems.map((i: TallyItem) => i.contNo).join(', ');
+        const names = incompleteItems.map(i => i.contNo).join(', ');
         alert(`Các Container sau chưa đủ thông tin:\n${names}\n\n- Số kiện, Trọng lượng > 0\n- Ảnh: tối thiểu ${minPhotos} ảnh\n- Seal (nếu Xuất)\n\nVui lòng hoàn tất hoặc chọn 'Lưu nháp'.`);
         return false;
     }
 
-    const allSeals = currentReport.items.flatMap((i: TallyItem) => i.sealNo ? i.sealNo.split(', ') : []).filter((s: string) => s.trim());
+    const allSeals = currentReport.items.flatMap(i => i.sealNo ? i.sealNo.split(', ') : []).filter(s => s.trim());
     const uniqueSeals = new Set(allSeals);
     if (allSeals.length !== uniqueSeals.size) {
         alert("Phát hiện mã Seal bị trùng lặp giữa các Container! Vui lòng kiểm tra lại. Mỗi Seal chỉ được sử dụng duy nhất 1 lần.");
@@ -452,6 +367,21 @@ const TallyReportView: React.FC<TallyReportViewProps> = ({ vessel, shift, mode, 
     }
   };
 
+  const handlePrintRequest = () => {
+    if (validateInfo()) {
+      setIsPreviewing(true);
+      
+      const originalTitle = document.title;
+      const cleanContNo = currentReport.items?.[0]?.contNo.replace(/[/\\?%*:|"<>]/g, '-') || 'Tally';
+      document.title = `Phieu_Tally_${cleanContNo}`;
+
+      setTimeout(() => {
+        window.print();
+        document.title = originalTitle;
+      }, 500);
+    }
+  };
+
   const handleFinalSave = (isDraft: boolean) => {
     if (!isDraft && !validateInfo()) {
       return;
@@ -462,12 +392,6 @@ const TallyReportView: React.FC<TallyReportViewProps> = ({ vessel, shift, mode, 
       createdAt: currentReport.createdAt || Date.now(),
       status: isDraft ? 'NHAP' : 'HOAN_TAT'
     } as TallyReport;
-    
-    // Remove auto-save data from localStorage upon completion
-    if (!isDraft) {
-        localStorage.removeItem(storageKey);
-    }
-
     onSave(report, isDraft);
   };
 
@@ -553,10 +477,10 @@ const TallyReportView: React.FC<TallyReportViewProps> = ({ vessel, shift, mode, 
     setExternalGroups(newGroups);
   };
 
-  const pendingItems = (currentReport.items || []).filter((i: TallyItem) => !isItemComplete(i));
-  const completedItems = (currentReport.items || []).filter((i: TallyItem) => isItemComplete(i));
+  const pendingItems = (currentReport.items || []).filter(i => !isItemComplete(i));
+  const completedItems = (currentReport.items || []).filter(i => isItemComplete(i));
   
-  const renderItemCard = (item: TallyItem, _idx: number, isComplete: boolean) => {
+  const renderItemCard = (item: TallyItem, idx: number, isComplete: boolean) => {
     const minPhotos = mode === 'NHAP' ? 5 : 1;
     const currentPhotoCount = item.photos?.length || 0;
     const isPhotoValid = currentPhotoCount >= minPhotos;
@@ -568,7 +492,7 @@ const TallyReportView: React.FC<TallyReportViewProps> = ({ vessel, shift, mode, 
           {isComplete ? '✓ Đã xong:' : '✎ Đang nhập:'} {item.contNo}
         </span>
         <button onClick={() => {
-          const newItems = (currentReport.items || []).filter((i: TallyItem) => i.contId !== item.contId);
+          const newItems = (currentReport.items || []).filter(i => i.contId !== item.contId);
           setCurrentReport({...currentReport, items: newItems});
         }} className="text-red-500 font-black text-[10px] uppercase p-2 hover:bg-red-50 rounded-lg">Xóa</button>
       </div>
@@ -600,17 +524,17 @@ const TallyReportView: React.FC<TallyReportViewProps> = ({ vessel, shift, mode, 
             </div>
             {item.sealCount && item.sealCount > 0 ? (
                 <div className="grid grid-cols-1 gap-2 mt-2">
-                    {Array.from({ length: item.sealCount }).map((_, sealIdx: number) => {
+                    {Array.from({ length: item.sealCount }).map((_, sealIdx) => {
                         const seals = item.sealNo ? item.sealNo.split(', ') : [];
                         const currentVal = seals[sealIdx] || '';
-                        const filteredOptions = MOCK_CUSTOMS_SEALS.filter((opt: string) => 
+                        const filteredOptions = MOCK_CUSTOMS_SEALS.filter(opt => 
                             !usedSealsSet.has(opt) || opt === currentVal
                         );
                         return (
                             <div key={sealIdx}>
                                 <AutocompleteInput 
                                     value={currentVal}
-                                    onChange={(val: string) => updateSealValue(item.contId, sealIdx, val)}
+                                    onChange={(val) => updateSealValue(item.contId, sealIdx, val)}
                                     options={filteredOptions}
                                     placeholder={`Nhập Seal ${sealIdx + 1}...`}
                                     className="w-full p-3 bg-white border border-blue-100 rounded-xl font-bold text-xs outline-none focus:ring-1 focus:ring-blue-200 uppercase"
@@ -649,7 +573,7 @@ const TallyReportView: React.FC<TallyReportViewProps> = ({ vessel, shift, mode, 
                 <span className="text-[8px] font-bold text-gray-400 uppercase mt-1">Chụp/Tải</span>
             </label>
 
-            {item.photos?.map((photo: string, pIdx: number) => (
+            {item.photos?.map((photo, pIdx) => (
                 <div key={pIdx} className="relative aspect-square rounded-xl overflow-hidden shadow-sm group">
                     <img src={photo} alt={`Photo ${pIdx}`} className="w-full h-full object-cover" />
                     <button 
@@ -719,7 +643,7 @@ const TallyReportView: React.FC<TallyReportViewProps> = ({ vessel, shift, mode, 
                              <AutocompleteInput
                                 key={idx}
                                 value={(currentReport.workerNames?.split(', ')[idx]) || ''}
-                                onChange={(val: string) => updateWorkerName(idx, val)}
+                                onChange={(val) => updateWorkerName(idx, val)}
                                 options={MOCK_WORKERS}
                                 placeholder={`Tên công nhân ${idx + 1}`}
                                 className="w-full p-2.5 bg-gray-50 border border-gray-100 rounded-xl font-bold text-xs outline-none focus:ring-1 focus:ring-blue-100"
@@ -743,12 +667,12 @@ const TallyReportView: React.FC<TallyReportViewProps> = ({ vessel, shift, mode, 
              {internalMechList.length === 0 && <p className="text-xs text-gray-300 italic text-center py-2">Chưa có cơ giới nội bộ</p>}
              
              <div className="space-y-3">
-                {internalMechList.map((mech: MechanicalDetail, index: number) => (
+                {internalMechList.map((mech, index) => (
                     <div key={index} className="flex gap-2 items-start bg-orange-50/30 p-2 rounded-xl border border-orange-100">
                         <div className="flex-1 space-y-2">
                              <AutocompleteInput
                                 value={mech.name}
-                                onChange={(val: string) => updateInternalMechanical(index, 'name', val)}
+                                onChange={(val) => updateInternalMechanical(index, 'name', val)}
                                 options={MOCK_DRIVERS}
                                 placeholder="Tên lái xe / Số xe"
                                 className="w-full p-2 bg-white border border-orange-100 rounded-lg font-bold text-xs outline-none"
@@ -758,7 +682,7 @@ const TallyReportView: React.FC<TallyReportViewProps> = ({ vessel, shift, mode, 
                                 value={mech.task}
                                 onChange={(e) => updateInternalMechanical(index, 'task', e.target.value)}
                              >
-                                {handlingOptions.map((opt: string) => <option key={opt} value={opt}>{opt}</option>)}
+                                {handlingOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
                              </select>
                         </div>
                         <button onClick={() => removeInternalMechanical(index)} className="p-2 text-red-400 hover:text-red-600">×</button>
@@ -779,13 +703,13 @@ const TallyReportView: React.FC<TallyReportViewProps> = ({ vessel, shift, mode, 
              {externalGroups.length === 0 && <p className="text-xs text-gray-300 italic text-center py-2">Chưa có đơn vị thuê ngoài</p>}
              
              <div className="space-y-4">
-                {externalGroups.map((group: ExternalMechGroup, gIdx: number) => (
+                {externalGroups.map((group, gIdx) => (
                     <div key={group.id} className="bg-purple-50/30 p-3 rounded-xl border border-purple-100 space-y-3">
                         <div className="flex gap-2">
                             <div className="flex-1">
                                 <AutocompleteInput
                                     value={group.name}
-                                    onChange={(val: string) => updateExternalGroupName(gIdx, val)}
+                                    onChange={(val) => updateExternalGroupName(gIdx, val)}
                                     options={MOCK_EXTERNAL_UNITS}
                                     placeholder="Tên đơn vị vận tải / cung ứng"
                                     className="w-full p-2 bg-white border border-purple-200 rounded-lg font-bold text-xs outline-none text-purple-900"
@@ -795,7 +719,7 @@ const TallyReportView: React.FC<TallyReportViewProps> = ({ vessel, shift, mode, 
                         </div>
 
                         <div className="pl-2 space-y-2 border-l-2 border-purple-200">
-                             {group.jobs.map((job: ExternalMechJob, jIdx: number) => (
+                             {group.jobs.map((job, jIdx) => (
                                  <div key={job.id} className="flex gap-2 items-center">
                                      <input 
                                         type="number" 
@@ -809,7 +733,7 @@ const TallyReportView: React.FC<TallyReportViewProps> = ({ vessel, shift, mode, 
                                         value={job.task}
                                         onChange={(e) => updateExternalJob(gIdx, jIdx, 'task', e.target.value)}
                                      >
-                                        {handlingOptions.map((opt: string) => <option key={opt} value={opt}>{opt}</option>)}
+                                        {handlingOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
                                      </select>
                                      <button onClick={() => removeExternalJob(gIdx, jIdx)} className="text-red-400 font-bold text-lg px-2">×</button>
                                  </div>
@@ -863,7 +787,7 @@ const TallyReportView: React.FC<TallyReportViewProps> = ({ vessel, shift, mode, 
 
                  {showResults && filteredSearchContainers.length > 0 && (
                     <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-2xl shadow-2xl border border-gray-100 max-h-60 overflow-y-auto z-40">
-                        {filteredSearchContainers.map((c: Container) => (
+                        {filteredSearchContainers.map(c => (
                             <div 
                                 key={c.id} 
                                 onClick={() => addContainerToReport(c)}
@@ -891,7 +815,7 @@ const TallyReportView: React.FC<TallyReportViewProps> = ({ vessel, shift, mode, 
 
            <div className="space-y-4 px-1">
                {/* Pending Items */}
-               {pendingItems.map((item: TallyItem, idx: number) => renderItemCard(item, idx, false))}
+               {pendingItems.map((item, idx) => renderItemCard(item, idx, false))}
 
                {/* Separator if needed */}
                {completedItems.length > 0 && pendingItems.length > 0 && (
@@ -903,7 +827,7 @@ const TallyReportView: React.FC<TallyReportViewProps> = ({ vessel, shift, mode, 
                )}
 
                {/* Completed Items (Collapsed View Optional, here Full View for Review) */}
-               {completedItems.map((item: TallyItem, idx: number) => renderItemCard(item, idx, true))}
+               {completedItems.map((item, idx) => renderItemCard(item, idx, true))}
                
                {/* Empty State */}
                {(currentReport.items || []).length === 0 && (

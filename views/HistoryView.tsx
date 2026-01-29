@@ -13,7 +13,7 @@ interface HistoryViewProps {
   onEditWO?: (wo: WorkOrder) => void;
 }
 
-const HistoryView: React.FC<HistoryViewProps> = ({ reports, workOrders, mode, onEditTally }) => {
+const HistoryView: React.FC<HistoryViewProps> = ({ reports, workOrders, mode, onEditTally, onEditWO }) => {
   const [woFilter, setWoFilter] = useState<'CONG_NHAN' | 'CO_GIOI' | 'CO_GIOI_NGOAI'>('CONG_NHAN');
   const [tallyTypeFilter, setTallyTypeFilter] = useState<'NHAP' | 'XUAT'>('NHAP');
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'NHAP' | 'HOAN_TAT'>('ALL');

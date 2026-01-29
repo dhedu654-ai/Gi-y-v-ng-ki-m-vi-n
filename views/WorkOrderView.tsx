@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { WorkOrder, TallyReport } from '../types';
 import WorkOrderPrintTemplate from '../components/WorkOrderPrintTemplate';
@@ -11,7 +10,7 @@ interface WorkOrderViewProps {
   onCancel: () => void;
 }
 
-const WorkOrderView: React.FC<WorkOrderViewProps> = ({ type, report, initialWO, onSave }) => {
+const WorkOrderView: React.FC<WorkOrderViewProps> = ({ type, report, initialWO, onSave, onCancel }) => {
   const totalUnits = report.items.reduce((sum, item) => sum + item.actualUnits, 0);
   const totalWeight = report.items.reduce((sum, item) => sum + item.actualWeight, 0);
 
