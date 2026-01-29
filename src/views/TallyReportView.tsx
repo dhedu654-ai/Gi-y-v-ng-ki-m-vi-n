@@ -83,14 +83,14 @@ const TallyReportView: React.FC<TallyReportViewProps> = ({ vessel, shift, mode, 
       
       if (initialReport.mechanicalDetails) {
         // Restore internal
-        setInternalMechList(initialReport.mechanicalDetails.filter(m => !m.isExternal));
+        setInternalMechList(initialReport.mechanicalDetails.filter((m: MechanicalDetail) => !m.isExternal));
         
         // Restore external groups logic
-        const externals = initialReport.mechanicalDetails.filter(m => m.isExternal);
+        const externals = initialReport.mechanicalDetails.filter((m: MechanicalDetail) => m.isExternal);
         
         // 1. Group by Name
         const nameGroups: Record<string, MechanicalDetail[]> = {};
-        externals.forEach(m => {
+        externals.forEach((m: MechanicalDetail) => {
             const name = m.name || '';
             if (!nameGroups[name]) nameGroups[name] = [];
             nameGroups[name].push(m);
@@ -100,7 +100,7 @@ const TallyReportView: React.FC<TallyReportViewProps> = ({ vessel, shift, mode, 
         const loadedGroups: ExternalMechGroup[] = Object.entries(nameGroups).map(([name, items]) => {
             // Within name, group by task to form jobs
             const taskCounts: Record<string, number> = {};
-            items.forEach(m => {
+            items.forEach((m: MechanicalDetail) => {
                 const t = m.task || handlingOptions[0];
                 taskCounts[t] = (taskCounts[t] || 0) + 1;
             });
@@ -151,7 +151,7 @@ const TallyReportView: React.FC<TallyReportViewProps> = ({ vessel, shift, mode, 
 
             const loadedGroups: ExternalMechGroup[] = Object.entries(nameGroups).map(([name, items]) => {
                 const taskCounts: Record<string, number> = {};
-                items.forEach(m => {
+                items.forEach((m: MechanicalDetail) => {
                     const t = m.task || handlingOptions[0];
                     taskCounts[t] = (taskCounts[t] || 0) + 1;
                 });
@@ -205,8 +205,8 @@ const TallyReportView: React.FC<TallyReportViewProps> = ({ vessel, shift, mode, 
   useEffect(() => {
     // Expand external groups to details
     const expandedExternal: MechanicalDetail[] = [];
-    externalGroups.forEach(g => {
-        g.jobs.forEach(j => {
+    externalGroups.forEach((g: ExternalMechGroup) => {
+        g.jobs.forEach((j: ExternalMechJob) => {
              for(let i=0; i < j.count; i++) {
                 expandedExternal.push({
                     name: g.name,
@@ -222,7 +222,7 @@ const TallyReportView: React.FC<TallyReportViewProps> = ({ vessel, shift, mode, 
         ...prev,
         mechanicalCount: internalMechList.length,
         externalMechanicalCount: expandedExternal.length,
-        mechanicalNames: internalMechList.map(m => m.name).join(', '), // Chỉ lưu tên nội bộ vào string cũ
+        mechanicalNames: internalMechList.map((m: MechanicalDetail) => m.name).join(', '), // Chỉ lưu tên nội bộ vào string cũ
         mechanicalDetails: allMech
     }));
   }, [internalMechList, externalGroups]);
@@ -241,7 +241,7 @@ const TallyReportView: React.FC<TallyReportViewProps> = ({ vessel, shift, mode, 
     if (mode === 'XUAT') {
         return MOCK_TRANSPORT_VEHICLES
           .filter(v => v.status === 'ACTIVE')
-          .map((v, i) => ({
+          .map((v, i: number) => ({
             id: `veh-${i}`,
             contNo: v.plate,
             size: 'XE TẢI',
@@ -256,7 +256,7 @@ const TallyReportView: React.FC<TallyReportViewProps> = ({ vessel, shift, mode, 
     return MOCK_CONTAINERS[vessel.id] || [];
   }, [vessel.id, mode]);
   
-  const filteredSearchContainers = availableContainers.filter(c => {
+  const filteredSearchContainers = availableContainers.filter((c: Container) => {
     const isExploitable = mode === 'XUAT' || (c.tkHouse && c.tkDnl);
     if (!isExploitable) return false;
 
@@ -270,9 +270,9 @@ const TallyReportView: React.FC<TallyReportViewProps> = ({ vessel, shift, mode, 
   // Calculate all currently used seals across all items to prevent duplicates
   const usedSealsSet = useMemo(() => {
     const set = new Set<string>();
-    currentReport.items?.forEach(item => {
+    currentReport.items?.forEach((item: TallyItem) => {
         if (item.sealNo) {
-            item.sealNo.split(', ').forEach(s => {
+            item.sealNo.split(', ').forEach((s: string) => {
                 if (s && s.trim()) set.add(s.trim());
             });
         }
@@ -324,7 +324,7 @@ const TallyReportView: React.FC<TallyReportViewProps> = ({ vessel, shift, mode, 
     if (mode === 'XUAT') {
       if (!item.sealCount || item.sealCount <= 0) return false;
       const seals = item.sealNo ? item.sealNo.split(', ') : [];
-      const filledSeals = seals.filter(s => s && s.trim().length > 0);
+      const filledSeals = seals.filter((s: string) => s && s.trim().length > 0);
       if (filledSeals.length < item.sealCount) return false;
     }
 
@@ -332,14 +332,14 @@ const TallyReportView: React.FC<TallyReportViewProps> = ({ vessel, shift, mode, 
   };
 
   const updateItem = (contId: string, field: keyof TallyItem, value: any) => {
-    const newItems = currentReport.items!.map(item => 
+    const newItems = currentReport.items!.map((item: TallyItem) => 
       item.contId === contId ? { ...item, [field]: value } : item
     );
     setCurrentReport(prev => ({ ...prev, items: newItems }));
   };
 
   const updateSealValue = (contId: string, sealIndex: number, value: string) => {
-    const item = currentReport.items!.find(i => i.contId === contId);
+    const item = currentReport.items!.find((i: TallyItem) => i.contId === contId);
     if (!item) return;
 
     const seals = item.sealNo ? item.sealNo.split(', ') : [];
@@ -351,7 +351,7 @@ const TallyReportView: React.FC<TallyReportViewProps> = ({ vessel, shift, mode, 
   const handlePhotoUpload = (contId: string, e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       const files = Array.from(e.target.files) as File[];
-      const item = currentReport.items?.find(i => i.contId === contId);
+      const item = currentReport.items?.find((i: TallyItem) => i.contId === contId);
       if (!item) return;
 
       const newPhotos = [...(item.photos || [])];
@@ -370,10 +370,10 @@ const TallyReportView: React.FC<TallyReportViewProps> = ({ vessel, shift, mode, 
   };
 
   const removePhoto = (contId: string, photoIndex: number) => {
-    const item = currentReport.items?.find(i => i.contId === contId);
+    const item = currentReport.items?.find((i: TallyItem) => i.contId === contId);
     if (!item || !item.photos) return;
     
-    const newPhotos = item.photos.filter((_, idx) => idx !== photoIndex);
+    const newPhotos = item.photos.filter((_: string, idx: number) => idx !== photoIndex);
     updateItem(contId, 'photos', newPhotos);
   };
 
@@ -382,7 +382,7 @@ const TallyReportView: React.FC<TallyReportViewProps> = ({ vessel, shift, mode, 
     const wCount = currentReport.workerCount || 0;
     const mCount = internalMechList.length;
     // Calculate total external people
-    const eCount = externalGroups.reduce((sum, g) => sum + g.jobs.reduce((js, j) => js + j.count, 0), 0);
+    const eCount = externalGroups.reduce((sum: number, g: ExternalMechGroup) => sum + g.jobs.reduce((js: number, j: ExternalMechJob) => js + j.count, 0), 0);
 
     let activeFields = 0;
     if (wCount > 0) activeFields++;
@@ -393,15 +393,15 @@ const TallyReportView: React.FC<TallyReportViewProps> = ({ vessel, shift, mode, 
 
     if (wCount > 0) {
         const names = currentReport.workerNames ? currentReport.workerNames.split(',') : [];
-        const filledNames = names.filter(n => n && n.trim().length > 0);
+        const filledNames = names.filter((n: string) => n && n.trim().length > 0);
         if (filledNames.length < wCount) return false;
     }
     
     // Check internal mechanical details
-    if (internalMechList.some(m => !m.name || !m.name.trim() || !m.task)) return false;
+    if (internalMechList.some((m: MechanicalDetail) => !m.name || !m.name.trim() || !m.task)) return false;
 
     // Check external groups
-    if (externalGroups.some(g => !g.name || !g.name.trim() || g.jobs.length === 0 || g.jobs.some(j => j.count <= 0))) return false;
+    if (externalGroups.some((g: ExternalMechGroup) => !g.name || !g.name.trim() || g.jobs.length === 0 || g.jobs.some((j: ExternalMechJob) => j.count <= 0))) return false;
 
     if (!currentReport.equipment || currentReport.equipment.trim() === '') return false;
     if (!currentReport.vehicleType || currentReport.vehicleType.trim() === '') return false;
@@ -428,15 +428,15 @@ const TallyReportView: React.FC<TallyReportViewProps> = ({ vessel, shift, mode, 
       return false;
     }
     
-    const incompleteItems = currentReport.items.filter(item => !isItemComplete(item));
+    const incompleteItems = currentReport.items.filter((item: TallyItem) => !isItemComplete(item));
     if (incompleteItems.length > 0) {
         const minPhotos = mode === 'NHAP' ? 5 : 1;
-        const names = incompleteItems.map(i => i.contNo).join(', ');
+        const names = incompleteItems.map((i: TallyItem) => i.contNo).join(', ');
         alert(`Các Container sau chưa đủ thông tin:\n${names}\n\n- Số kiện, Trọng lượng > 0\n- Ảnh: tối thiểu ${minPhotos} ảnh\n- Seal (nếu Xuất)\n\nVui lòng hoàn tất hoặc chọn 'Lưu nháp'.`);
         return false;
     }
 
-    const allSeals = currentReport.items.flatMap(i => i.sealNo ? i.sealNo.split(', ') : []).filter(s => s.trim());
+    const allSeals = currentReport.items.flatMap((i: TallyItem) => i.sealNo ? i.sealNo.split(', ') : []).filter((s: string) => s.trim());
     const uniqueSeals = new Set(allSeals);
     if (allSeals.length !== uniqueSeals.size) {
         alert("Phát hiện mã Seal bị trùng lặp giữa các Container! Vui lòng kiểm tra lại. Mỗi Seal chỉ được sử dụng duy nhất 1 lần.");
@@ -553,10 +553,10 @@ const TallyReportView: React.FC<TallyReportViewProps> = ({ vessel, shift, mode, 
     setExternalGroups(newGroups);
   };
 
-  const pendingItems = (currentReport.items || []).filter(i => !isItemComplete(i));
-  const completedItems = (currentReport.items || []).filter(i => isItemComplete(i));
+  const pendingItems = (currentReport.items || []).filter((i: TallyItem) => !isItemComplete(i));
+  const completedItems = (currentReport.items || []).filter((i: TallyItem) => isItemComplete(i));
   
-  const renderItemCard = (item: TallyItem, idx: number, isComplete: boolean) => {
+  const renderItemCard = (item: TallyItem, _idx: number, isComplete: boolean) => {
     const minPhotos = mode === 'NHAP' ? 5 : 1;
     const currentPhotoCount = item.photos?.length || 0;
     const isPhotoValid = currentPhotoCount >= minPhotos;
@@ -568,7 +568,7 @@ const TallyReportView: React.FC<TallyReportViewProps> = ({ vessel, shift, mode, 
           {isComplete ? '✓ Đã xong:' : '✎ Đang nhập:'} {item.contNo}
         </span>
         <button onClick={() => {
-          const newItems = (currentReport.items || []).filter(i => i.contId !== item.contId);
+          const newItems = (currentReport.items || []).filter((i: TallyItem) => i.contId !== item.contId);
           setCurrentReport({...currentReport, items: newItems});
         }} className="text-red-500 font-black text-[10px] uppercase p-2 hover:bg-red-50 rounded-lg">Xóa</button>
       </div>
@@ -600,10 +600,10 @@ const TallyReportView: React.FC<TallyReportViewProps> = ({ vessel, shift, mode, 
             </div>
             {item.sealCount && item.sealCount > 0 ? (
                 <div className="grid grid-cols-1 gap-2 mt-2">
-                    {Array.from({ length: item.sealCount }).map((_, sealIdx) => {
+                    {Array.from({ length: item.sealCount }).map((_, sealIdx: number) => {
                         const seals = item.sealNo ? item.sealNo.split(', ') : [];
                         const currentVal = seals[sealIdx] || '';
-                        const filteredOptions = MOCK_CUSTOMS_SEALS.filter(opt => 
+                        const filteredOptions = MOCK_CUSTOMS_SEALS.filter((opt: string) => 
                             !usedSealsSet.has(opt) || opt === currentVal
                         );
                         return (
@@ -743,7 +743,7 @@ const TallyReportView: React.FC<TallyReportViewProps> = ({ vessel, shift, mode, 
              {internalMechList.length === 0 && <p className="text-xs text-gray-300 italic text-center py-2">Chưa có cơ giới nội bộ</p>}
              
              <div className="space-y-3">
-                {internalMechList.map((mech, index) => (
+                {internalMechList.map((mech: MechanicalDetail, index: number) => (
                     <div key={index} className="flex gap-2 items-start bg-orange-50/30 p-2 rounded-xl border border-orange-100">
                         <div className="flex-1 space-y-2">
                              <AutocompleteInput
@@ -779,7 +779,7 @@ const TallyReportView: React.FC<TallyReportViewProps> = ({ vessel, shift, mode, 
              {externalGroups.length === 0 && <p className="text-xs text-gray-300 italic text-center py-2">Chưa có đơn vị thuê ngoài</p>}
              
              <div className="space-y-4">
-                {externalGroups.map((group, gIdx) => (
+                {externalGroups.map((group: ExternalMechGroup, gIdx: number) => (
                     <div key={group.id} className="bg-purple-50/30 p-3 rounded-xl border border-purple-100 space-y-3">
                         <div className="flex gap-2">
                             <div className="flex-1">
@@ -795,7 +795,7 @@ const TallyReportView: React.FC<TallyReportViewProps> = ({ vessel, shift, mode, 
                         </div>
 
                         <div className="pl-2 space-y-2 border-l-2 border-purple-200">
-                             {group.jobs.map((job, jIdx) => (
+                             {group.jobs.map((job: ExternalMechJob, jIdx: number) => (
                                  <div key={job.id} className="flex gap-2 items-center">
                                      <input 
                                         type="number" 
