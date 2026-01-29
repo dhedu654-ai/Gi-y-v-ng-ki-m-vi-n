@@ -48,7 +48,7 @@ const TallyReportView: React.FC<TallyReportViewProps> = ({ vessel, shift, mode, 
     shift: shift,
     workDate: workDate,
     owner: vessel.customerName,
-    workerCount: 1, 
+    workerCount: 0,
     workerNames: '',
     mechanicalCount: 0,
     mechanicalNames: '',
@@ -567,7 +567,7 @@ const TallyReportView: React.FC<TallyReportViewProps> = ({ vessel, shift, mode, 
           {isComplete ? '✓ Đã xong:' : '✎ Đang nhập:'} {item.contNo}
         </span>
         <button onClick={() => {
-          const newItems = (currentReport.items || []).filter(i => i.contId !== item.contId);
+          const newItems = (currentReport.items || []).filter((i: TallyItem) => i.contId !== item.contId);
           setCurrentReport({...currentReport, items: newItems});
         }} className="text-red-500 font-black text-[10px] uppercase p-2 hover:bg-red-50 rounded-lg">Xóa</button>
       </div>
@@ -602,14 +602,14 @@ const TallyReportView: React.FC<TallyReportViewProps> = ({ vessel, shift, mode, 
                     {Array.from({ length: item.sealCount }).map((_, sealIdx) => {
                         const seals = item.sealNo ? item.sealNo.split(', ') : [];
                         const currentVal = seals[sealIdx] || '';
-                        const filteredOptions = MOCK_CUSTOMS_SEALS.filter(opt => 
+                        const filteredOptions = MOCK_CUSTOMS_SEALS.filter((opt: string) => 
                             !usedSealsSet.has(opt) || opt === currentVal
                         );
                         return (
                             <div key={sealIdx}>
                                 <AutocompleteInput 
                                     value={currentVal}
-                                    onChange={(val) => updateSealValue(item.contId, sealIdx, val)}
+                                    onChange={(val: string) => updateSealValue(item.contId, sealIdx, val)}
                                     options={filteredOptions}
                                     placeholder={`Nhập Seal ${sealIdx + 1}...`}
                                     className="w-full p-3 bg-white border border-blue-100 rounded-xl font-bold text-xs outline-none focus:ring-1 focus:ring-blue-200 uppercase"
@@ -648,7 +648,7 @@ const TallyReportView: React.FC<TallyReportViewProps> = ({ vessel, shift, mode, 
                 <span className="text-[8px] font-bold text-gray-400 uppercase mt-1">Chụp/Tải</span>
             </label>
 
-            {item.photos?.map((photo, pIdx) => (
+            {item.photos?.map((photo: string, pIdx: number) => (
                 <div key={pIdx} className="relative aspect-square rounded-xl overflow-hidden shadow-sm group">
                     <img src={photo} alt={`Photo ${pIdx}`} className="w-full h-full object-cover" />
                     <button 
@@ -716,7 +716,7 @@ const TallyReportView: React.FC<TallyReportViewProps> = ({ vessel, shift, mode, 
                                     <AutocompleteInput
                                         key={idx}
                                         value={currentName}
-                                        onChange={(val) => updateWorkerName(idx, val)}
+                                        onChange={(val: string) => updateWorkerName(idx, val)}
                                         options={getAvailableOptions(MOCK_WORKERS, selectedWorkers, currentName)}
                                         placeholder={`Tên công nhân ${idx + 1}`}
                                         className="w-full p-2.5 bg-gray-50 border border-gray-100 rounded-xl font-bold text-xs outline-none focus:ring-1 focus:ring-blue-100"
@@ -746,7 +746,7 @@ const TallyReportView: React.FC<TallyReportViewProps> = ({ vessel, shift, mode, 
                                 <div className="flex-1 space-y-2">
                                     <AutocompleteInput
                                         value={mech.name}
-                                        onChange={(val) => updateInternalMechanical(index, 'name', val)}
+                                        onChange={(val: string) => updateInternalMechanical(index, 'name', val)}
                                         options={getAvailableOptions(MOCK_DRIVERS, selectedDrivers, mech.name)}
                                         placeholder="Tên lái xe / Số xe"
                                         className="w-full p-2 bg-white border border-orange-100 rounded-lg font-bold text-xs outline-none"
@@ -756,7 +756,7 @@ const TallyReportView: React.FC<TallyReportViewProps> = ({ vessel, shift, mode, 
                                         value={mech.task}
                                         onChange={(e) => updateInternalMechanical(index, 'task', e.target.value)}
                                     >
-                                        {handlingOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                                        {handlingOptions.map((opt: string) => <option key={opt} value={opt}>{opt}</option>)}
                                     </select>
                                 </div>
                                 <button onClick={() => removeInternalMechanical(index)} className="p-2 text-red-400 hover:text-red-600">×</button>
@@ -784,7 +784,7 @@ const TallyReportView: React.FC<TallyReportViewProps> = ({ vessel, shift, mode, 
                                     <div className="flex-1">
                                         <AutocompleteInput
                                             value={group.name}
-                                            onChange={(val) => updateExternalGroupName(gIdx, val)}
+                                            onChange={(val: string) => updateExternalGroupName(gIdx, val)}
                                             options={getAvailableOptions(MOCK_EXTERNAL_UNITS, selectedUnits, group.name)}
                                             placeholder="Tên đơn vị vận tải / cung ứng"
                                             className="w-full p-2 bg-white border border-purple-200 rounded-lg font-bold text-xs outline-none text-purple-900"
@@ -808,7 +808,7 @@ const TallyReportView: React.FC<TallyReportViewProps> = ({ vessel, shift, mode, 
                                                 value={job.task}
                                                 onChange={(e) => updateExternalJob(gIdx, jIdx, 'task', e.target.value)}
                                             >
-                                                {handlingOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                                                {handlingOptions.map((opt: string) => <option key={opt} value={opt}>{opt}</option>)}
                                             </select>
                                             <button onClick={() => removeExternalJob(gIdx, jIdx)} className="text-red-400 font-bold text-lg px-2">×</button>
                                         </div>
@@ -863,7 +863,7 @@ const TallyReportView: React.FC<TallyReportViewProps> = ({ vessel, shift, mode, 
 
                     {showResults && filteredSearchContainers.length > 0 && (
                         <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-2xl shadow-2xl border border-gray-100 max-h-60 overflow-y-auto z-40">
-                            {filteredSearchContainers.map(c => (
+                            {filteredSearchContainers.map((c: Container) => (
                                 <div 
                                     key={c.id} 
                                     onClick={() => addContainerToReport(c)}
@@ -894,7 +894,7 @@ const TallyReportView: React.FC<TallyReportViewProps> = ({ vessel, shift, mode, 
 
             <div className="space-y-4 px-1">
                 {/* Pending Items */}
-                {pendingItems.map((item, idx) => renderItemCard(item, idx, false))}
+                {pendingItems.map((item: TallyItem, idx: number) => renderItemCard(item, idx, false))}
 
                 {/* Separator if needed */}
                 {completedItems.length > 0 && pendingItems.length > 0 && (
@@ -906,7 +906,7 @@ const TallyReportView: React.FC<TallyReportViewProps> = ({ vessel, shift, mode, 
                 )}
 
                 {/* Completed Items (Collapsed View Optional, here Full View for Review) */}
-                {completedItems.map((item, idx) => renderItemCard(item, idx, true))}
+                {completedItems.map((item: TallyItem, idx: number) => renderItemCard(item, idx, true))}
                 
                 {/* Empty State */}
                 {(currentReport.items || []).length === 0 && (
