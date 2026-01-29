@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Vessel, Shift, TallyReport, TallyItem, Container, MechanicalDetail } from '../types';
 import { MOCK_CONTAINERS, MOCK_WORKERS, MOCK_DRIVERS, MOCK_TRANSPORT_VEHICLES, MOCK_CUSTOMS_SEALS, HANDLING_METHODS, MOCK_EXTERNAL_UNITS } from '../constants';
 import TallyPrintTemplate from '../components/TallyPrintTemplate';
